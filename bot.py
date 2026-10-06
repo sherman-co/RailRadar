@@ -31,7 +31,7 @@ if sys.platform == "win32":
 
 # در نسخه exe فایل‌های همراه (panel.html و ...) داخل پوشه موقت PyInstaller هستند
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-VERSION = "8"
+VERSION = "9"
 
 
 def _data_dir():
@@ -70,6 +70,7 @@ DEFAULT_CONFIG = {
     "block_images": True,        # عکس‌ها لود نشوند تا اینترنت کمتر مصرف شود
     "autostart": False,
     "train_only": True,          # فقط قطار؛ اتوبوس و سفر ترکیبی حساب نشوند
+    "low_memory": False,         # بین بررسی‌ها صفحه‌ها از حافظه خالی شوند (رم کمتر)
 }
 
 PERSIST_FIELDS = ("id", "name", "url", "enabled", "min_seats", "filter")
@@ -354,6 +355,7 @@ class Monitor:
         self.subs = set()
         self.wake = asyncio.Event()
         self.pages = {}
+        self.cdps = {}
         self.page_urls = {}
         self.context = None
         self.http = None
@@ -396,6 +398,7 @@ class Monitor:
             "bytes_total": self.bytes_total,
             "started_at": self.started_at,
             "train_only": self.cfg.get("train_only", True),
+            "low_memory": self.cfg.get("low_memory", False),
             "interval": [self.cfg["interval_min_sec"], self.cfg["interval_max_sec"]],
             "default_min_seats": self.cfg["default_min_seats"],
             "settings": self.settings_view(),
@@ -488,6 +491,9 @@ class Monitor:
                 if self.cfg.get(k) != v:
                     self.cfg[k] = v
                     msg_changed = True
+        if kw.get("low_memory") is not None:
+            self.cfg["low_memory"] = bool(kw["low_memory"])
+            self.log("حالت کم‌مصرف رم " + ("روشن شد" if self.cfg["low_memory"] else "خاموش شد"))
         if kw.get("train_only") is not None:
             self.cfg["train_only"] = bool(kw["train_only"])
             for s in self.searches.values():
@@ -546,8 +552,16 @@ class Monitor:
         await self._launch(None)
 
     async def _launch(self, channel):
-        args = ["--disable-background-timer-throttling", "--disable-renderer-backgrounding",
-                "--disable-backgrounding-occluded-windows", "--disable-blink-features=AutomationControlled"]
+        # تنظیمات سبک: بدون GPU، افزونه، صدا، همگام‌سازی و به‌روزرسانی پس‌زمینه
+        args = ["--disable-blink-features=AutomationControlled", "--disable-gpu", "--disable-extensions",
+                "--mute-audio", "--no-first-run", "--no-default-browser-check", "--disable-sync",
+                "--disable-background-networking", "--disable-component-update", "--disable-default-apps",
+                "--disable-breakpad", "--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication",
+                "--js-flags=--max-old-space-size=256"]
+        if not self.cfg["headless"]:
+            # در حالت پنجره‌دار، تب‌های پشت صحنه نباید کند شوند
+            args += ["--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+                     "--disable-backgrounding-occluded-windows"]
         if self.cfg["block_images"]:
             # از route استفاده نمی‌کنیم چون کش مرورگر را خاموش می‌کند و مصرف اینترنت بیشتر می‌شود
             args.append("--blink-settings=imagesEnabled=false")
@@ -567,6 +581,7 @@ class Monitor:
         try:
             cdp = await self.context.new_cdp_session(page)
             await cdp.send("Network.enable")
+            self.cdps[s["id"]] = cdp
 
             def on_done(ev, s=s):
                 n = int(ev.get("encodedDataLength") or 0)
@@ -576,7 +591,38 @@ class Monitor:
         except Exception as e:
             self.log(f"شمارش حجم برای {s['name']} فعال نشد: {e}")
 
+    async def _lifecycle(self, sid, state):
+        """«frozen» = جاوااسکریپت صفحه کاملاً متوقف می‌شود (تایمرها، انیمیشن‌ها) پس CPU بین بررسی‌ها نزدیک صفر است؛
+        صفحه باز می‌ماند و قبل از رفرش دوباره «active» می‌شود"""
+        cdp = self.cdps.get(sid)
+        if not cdp:
+            return
+        try:
+            if state == "frozen":
+                await cdp.send("Debugger.enable")
+                await cdp.send("Debugger.pause")
+                await cdp.send("Page.setWebLifecycleState", {"state": "frozen"})
+            else:
+                await cdp.send("Page.setWebLifecycleState", {"state": "active"})
+                await cdp.send("Debugger.resume")
+                await cdp.send("Debugger.disable")
+        except Exception:
+            pass
+
+    async def rest_page(self, s):
+        """بعد از هر بررسی: صفحه را منجمد کن، یا در حالت کم‌مصرف کاملاً از حافظه خالی کن"""
+        sid = s["id"]
+        p = self.pages.get(sid)
+        if not p or p.is_closed():
+            return
+        if self.cfg.get("low_memory"):
+            # تب کاملاً بسته می‌شود تا پروسه‌اش از رم خارج شود؛ فایل‌های سایت در کش دیسک می‌مانند
+            await self.close_page(sid)
+        else:
+            await self._lifecycle(sid, "frozen")
+
     async def close_page(self, sid):
+        self.cdps.pop(sid, None)
         p = self.pages.pop(sid, None)
         self.page_urls.pop(sid, None)
         if p and not p.is_closed():
@@ -593,10 +639,12 @@ class Monitor:
             self.pages[sid] = p
             await self.track_bytes(p, s)
             await p.goto(url, wait_until="domcontentloaded", timeout=60000)
-        elif self.page_urls.get(sid) != url:
-            await p.goto(url, wait_until="domcontentloaded", timeout=60000)
         else:
-            await p.reload(wait_until="domcontentloaded", timeout=60000)
+            await self._lifecycle(sid, "active")   # از حالت منجمد بیرون بیاید
+            if self.page_urls.get(sid) != url:      # لینک عوض شده یا در حالت کم‌مصرف خالی شده بود
+                await p.goto(url, wait_until="domcontentloaded", timeout=60000)
+            else:
+                await p.reload(wait_until="domcontentloaded", timeout=60000)
         self.page_urls[sid] = url
         try:
             await p.wait_for_load_state("networkidle", timeout=15000)
@@ -673,6 +721,7 @@ class Monitor:
                 await self.close_page(s["id"])  # دفعه بعد صفحه از نو باز شود
             if rt["errors"] == 3:
                 await self.tg_send(f"⚠️ جستجوی «{s['name']}» سه بار پشت سر هم خطا داد:\n{rt['error']}")
+        await self.rest_page(s)
         self.emit_state()
 
     async def alert(self, s, c):

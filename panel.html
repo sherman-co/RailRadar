@@ -144,7 +144,7 @@ code{direction:ltr;unicode-bidi:embed;font-size:11.5px}
 <body>
 <div class="wrap">
   <header>
-    <h1><span id="runDot" class="dot"></span> پایش بلیط <span class="ver">نسخه ۸</span></h1>
+    <h1><span id="runDot" class="dot"></span> پایش بلیط <span class="ver">نسخه ۹</span></h1>
     <div class="actions">
       <span class="data" id="dataUse" title="حجم اینترنت مصرف‌شده از زمان روشن شدن برنامه"></span>
       <button class="icon" id="themeBtn" title="تم"></button>
@@ -185,6 +185,8 @@ code{direction:ltr;unicode-bidi:embed;font-size:11.5px}
         </div>
         <label class="c" style="margin-top:12px"><input type="checkbox" id="train_only">
           فقط قطار (اتوبوس و سفر ترکیبی قطار+اتوبوس نشان داده و اعلام نشوند)</label>
+        <label class="c" style="margin-top:8px"><input type="checkbox" id="low_memory">
+          حالت کم‌مصرف رم (بین بررسی‌ها تب‌ها بسته می‌شوند؛ رم خیلی کمتر، هر بررسی چند ثانیه کندتر)</label>
       </div>
     </details>
   </section>
@@ -264,6 +266,7 @@ function render(st){
   $('#dataUse').title = `حجم مصرف‌شده در ${fa(mins)} دقیقه گذشته\n` +
     st.searches.filter(s => s.bytes).map(s => `${s.name}: ${fmtMB(s.bytes)}`).join('\n');
   if (!$('#train_only').dataset.dirty) $('#train_only').checked = st.train_only;
+  $('#low_memory').checked = st.low_memory;
   $('#runBtn').className = st.running ? '' : 'solid';
   const ms = st.messengers.filter(m => m.token);
   $('#msgState').innerHTML = !ms.length ? '<span class="dot warn"></span>پیام‌رسانی تنظیم نشده' : ms.map(m => {
@@ -418,6 +421,7 @@ $('#addForm').onsubmit = e => {
 };
 $('#saveSettings').onclick = () => api('POST', '/api/settings', {interval_min_sec: +$('#imin').value,
   interval_max_sec: +$('#imax').value, default_min_seats: +$('#dseats').value});
+$('#low_memory').onchange = e => api('POST', '/api/settings', {low_memory: e.target.checked});
 $('#train_only').onchange = e => api('POST', '/api/settings', {train_only: e.target.checked});
 $('#tgTest').onclick = () => api('POST', '/api/telegram/test').then(j => j.ok && alert('پیام ارسال شد ✅'));
 document.querySelectorAll('.grid2 input').forEach(i => i.addEventListener(i.type === 'checkbox' ? 'change' : 'input', () => i.dataset.dirty = 1));
