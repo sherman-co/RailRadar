@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.tmp
+searches.json
+browser_profile/
+build/
+dist/
+*.spec
+.venv/
+venv/

@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>پایش بلیط</title>
+<script>
+  // تم قبل از رندر اعمال شود تا صفحه چشمک نزند
+  try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<style>
+:root{
+  --bg:#f7f7f8; --surface:#ffffff; --text:#18181b; --muted:#71717a; --faint:#a1a1aa;
+  --line:#e4e4e7; --hover:#f4f4f5; --accent:#18181b; --accent-text:#ffffff;
+  --ok:#16a34a; --ok-soft:#f0fdf4; --bad:#dc2626; --warn:#d97706; --log:#fafafa;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0c0c0e; --surface:#151518; --text:#ececee; --muted:#9a9aa3; --faint:#62626b;
+    --line:#26262b; --hover:#1d1d21; --accent:#ececee; --accent-text:#0c0c0e;
+    --ok:#4ade80; --ok-soft:#0f1f15; --bad:#f87171; --warn:#fbbf24; --log:#111114;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0c0c0e; --surface:#151518; --text:#ececee; --muted:#9a9aa3; --faint:#62626b;
+  --line:#26262b; --hover:#1d1d21; --accent:#ececee; --accent-text:#0c0c0e;
+  --ok:#4ade80; --ok-soft:#0f1f15; --bad:#f87171; --warn:#fbbf24; --log:#111114;
+}
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.65 Tahoma,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:860px;margin:0 auto;padding:20px 16px 48px}
+button,input{font:inherit;color:inherit}
+button{background:transparent;border:1px solid var(--line);border-radius:8px;padding:5px 11px;cursor:pointer;white-space:nowrap}
+button:hover{background:var(--hover)}
+button.solid{background:var(--accent);color:var(--accent-text);border-color:var(--accent)}
+button.solid:hover{opacity:.88}
+button.icon{padding:5px 8px;display:inline-flex;align-items:center;border-color:transparent;color:var(--muted)}
+button.icon:hover{color:var(--text)}
+button.icon.del:hover{color:var(--bad)}
+input{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 10px;min-width:0;width:100%}
+input:focus{outline:none;border-color:var(--muted)}
+.ltr{direction:ltr;text-align:left}
+.muted{color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--faint);flex:none}
+.dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)} .dot.warn{background:var(--warn)}
+.dot.pulse{animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.3}}
+
+/* header */
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+header h1{font-size:17px;margin:0;font-weight:600;display:flex;align-items:center;gap:8px}
+header .ver{font-size:11px;color:var(--faint);font-weight:normal}
+header .actions{margin-inline-start:auto;display:flex;gap:6px;align-items:center}
+.data{font-size:12px;color:var(--muted);padding:3px 9px;border:1px solid var(--line);border-radius:99px;direction:ltr;cursor:default}
+.notice{color:var(--warn);flex-basis:100%}
+.status{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12.5px;margin-bottom:20px}
+.status span{display:inline-flex;align-items:center;gap:6px}
+
+/* add */
+.add{display:flex;gap:6px;margin-bottom:16px}
+.add input[name=url]{flex:1}
+.add .more{display:none;gap:6px}
+.add.open .more{display:flex}
+.add .more input{width:110px}
+.add .more input[name=min_seats]{width:64px}
+@media (max-width:640px){.add{flex-wrap:wrap}.add .more{width:100%}.add .more input{flex:1;width:auto}}
+
+/* search list */
+.list{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.item{padding:12px 14px;border-top:1px solid var(--line);min-width:0}
+.item:first-child{border-top:0}
+.item.off{opacity:.5}
+.item.hit{background:var(--ok-soft)}
+.top{display:flex;align-items:center;gap:10px;min-width:0}
+.top .name{flex:1;min-width:0;border-color:transparent;background:transparent;padding:2px 6px;font-weight:600;
+  text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+.top .name:hover{border-color:var(--line)}
+.site{font-size:11.5px;color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:99px;
+  padding:1px 9px;direction:ltr;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}
+.site:hover{color:var(--text)}
+.meta{display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;margin:6px 0 0;padding-inline-start:44px;font-size:12.5px;color:var(--muted)}
+.meta b{color:var(--text);font-weight:600}
+.meta .good b{color:var(--ok)}
+.meta .err{color:var(--bad);flex-basis:100%}
+.ctrl{display:flex;align-items:center;gap:4px;margin-inline-start:auto}
+.seat{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seat button{border:0;border-radius:0;padding:2px 8px}
+.seat b{min-width:18px;text-align:center;font-weight:600;font-size:12.5px}
+.flt{width:96px;padding:3px 8px;font-size:12.5px}
+@media (max-width:640px){.meta{padding-inline-start:0}.ctrl{margin-inline-start:0;width:100%}.flt{flex:1}}
+
+/* switch */
+.sw{position:relative;width:34px;height:20px;flex:none;cursor:pointer}
+.sw input{position:absolute;opacity:0;width:0;height:0}
+.sw span{position:absolute;inset:0;background:var(--line);border-radius:99px;transition:.15s}
+.sw span:before{content:"";position:absolute;width:14px;height:14px;top:3px;right:3px;background:#fff;border-radius:50%;transition:.15s}
+.sw input:checked+span{background:var(--ok)}
+.sw input:checked+span:before{transform:translateX(-14px)}
+
+/* results */
+details.res{margin-top:6px;padding-inline-start:44px}
+details.res summary{cursor:pointer;color:var(--faint);font-size:12px;list-style:none}
+details.res summary::-webkit-details-marker{display:none}
+details.res summary:hover{color:var(--text)}
+.rows{margin-top:6px;border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:12.5px}
+.r{display:grid;grid-template-columns:1fr 54px 92px;gap:8px;padding:6px 10px;border-top:1px solid var(--line)}
+.r:first-child{border-top:0}
+.r .t{min-width:0;overflow-wrap:anywhere}
+.r.full{color:var(--faint)}
+.r.ok{background:var(--ok-soft)}
+.r.ok .s{color:var(--ok);font-weight:600}
+@media (max-width:640px){details.res{padding-inline-start:0}}
+
+.empty{padding:28px;text-align:center;color:var(--muted)}
+
+/* sections */
+section{margin-top:28px}
+section > h2,details.sec > summary{font-size:13px;font-weight:600;color:var(--muted);margin:0 0 10px;cursor:pointer;list-style:none}
+details.sec > summary::-webkit-details-marker{display:none}
+details.sec > summary:before{content:"‹ ";display:inline-block;transition:.15s}
+details.sec[open] > summary:before{transform:rotate(-90deg)}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:640px){.grid2{grid-template-columns:1fr}}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+label.c{display:flex;align-items:center;gap:8px;font-size:13px}
+label.c input{width:auto}
+.btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.hint{color:var(--faint);font-size:12px;margin:10px 0 0;line-height:1.8}
+code{direction:ltr;unicode-bidi:embed;font-size:11.5px}
+.inline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.inline input{width:76px}
+
+#log{background:var(--log);border:1px solid var(--line);border-radius:12px;padding:10px 14px;height:240px;overflow:auto;
+  font:12px/1.9 Consolas,"Courier New",monospace;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+#log .hit{color:var(--ok);font-weight:600} #log .bad{color:var(--bad)}
+
+#toast{position:fixed;bottom:16px;inset-inline:16px;max-width:420px;margin:auto;background:var(--accent);color:var(--accent-text);
+  padding:12px 16px;border-radius:12px;box-shadow:0 10px 30px #0003;display:none;z-index:9;font-size:13.5px}
+#toast a{color:inherit;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span id="runDot" class="dot"></span> پایش بلیط <span class="ver">نسخه ۷</span></h1>
+    <div class="actions">
+      <span class="data" id="dataUse" title="حجم اینترنت مصرف‌شده از زمان روشن شدن برنامه"></span>
+      <button class="icon" id="themeBtn" title="تم"></button>
+      <button id="checkBtn">بررسی الان</button>
+      <button id="runBtn" class="solid">شروع</button>
+    </div>
+  </header>
+  <div class="status">
+    <span id="countdown">—</span>
+    <span id="msgState"></span>
+    <span id="conn"><span class="dot warn"></span>اتصال به پنل…</span>
+  </div>
+
+  <form class="add" id="addForm" autocomplete="off">
+    <input name="url" class="ltr" placeholder="لینک صفحه نتایج را اینجا بچسبانید" required>
+    <div class="more">
+      <input name="name" placeholder="اسم">
+      <input name="filter" placeholder="فیلتر">
+      <input name="min_seats" type="number" min="1" value="2" title="حداقل صندلی">
+    </div>
+    <button type="button" class="icon" id="moreBtn" title="اسم، فیلتر، حداقل صندلی">⋯</button>
+    <button class="solid">افزودن</button>
+  </form>
+
+  <div class="list" id="searches"></div>
+
+  <section>
+    <details class="sec">
+      <summary>تنظیمات</summary>
+      <div class="box">
+        <div class="inline">
+          بررسی هر <input id="imin" type="number" min="10"> تا <input id="imax" type="number" min="10"> ثانیه
+          <span class="muted">·</span> حداقل صندلی پیش‌فرض <input id="dseats" type="number" min="1">
+        </div>
+        <div class="btns">
+          <button id="saveSettings">ذخیره</button>
+          <button id="notifBtn">فعال کردن صدا و اعلان</button>
+        </div>
+        <label class="c" style="margin-top:12px"><input type="checkbox" id="train_only">
+          فقط قطار (اتوبوس و سفر ترکیبی قطار+اتوبوس نشان داده و اعلام نشوند)</label>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <details class="sec">
+      <summary>پیام‌رسان‌ها و مرورگر</summary>
+      <div class="box">
+        <div class="grid2">
+          <label class="f">توکن بله<input id="bale_token" class="ltr"></label>
+          <label class="f">chat_id بله<input id="bale_chat_id" class="ltr" placeholder="خالی = اولین /start"></label>
+          <label class="f">توکن تلگرام<input id="telegram_token" class="ltr"></label>
+          <label class="f">chat_id تلگرام<input id="admin_chat_id" class="ltr" placeholder="خالی = اولین /start"></label>
+          <label class="f">پروکسی تلگرام<input id="proxy" class="ltr" placeholder="خالی = پروکسی سیستم"></label>
+          <div style="display:flex;flex-direction:column;gap:8px;justify-content:flex-end">
+            <label class="c"><input type="checkbox" id="headless"> مرورگر مخفی</label>
+            <label class="c"><input type="checkbox" id="block_images"> بدون عکس (اینترنت کمتر)</label>
+          </div>
+        </div>
+        <div class="btns">
+          <button class="solid" id="saveMsg">ذخیره</button>
+          <button id="tgTest">پیام آزمایشی</button>
+          <button id="clearBale">حذف توکن بله</button>
+          <button id="clearTg">حذف توکن تلگرام</button>
+        </div>
+        <p class="hint">توکن‌ها فقط با ۴ حرف آخر نشان داده می‌شوند؛ خالی بگذارید تا تغییر نکند.
+          اگر پروکسی خالی باشد، پروکسی سیستم (مثلاً v2rayN در حالت System Proxy) برای تلگرام استفاده می‌شود.
+          بله همیشه مستقیم وصل می‌شود.<br>محل ذخیره: <code id="dataDir"></code></p>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <h2>گزارش</h2>
+    <div id="log"></div>
+  </section>
+</div>
+<div id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fa = v => String(v).replace(/\d/g, d => '۰۱۲۳۴۵۶۷۸۹'[d]);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const api = (method, path, body) => fetch(path, {method, headers:{'Content-Type':'application/json'},
+  body: body ? JSON.stringify(body) : undefined}).then(r => r.json()).then(j => { if (!j.ok && j.error) alert(j.error); return j; });
+const host = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } };
+const STATUS = {idle:'در انتظار', checking:'در حال بررسی', ok:'', error:'خطا'};
+let S = null, skew = 0, soundOn = false;
+const cards = new Map();
+const fmtMB = b => b < 1048576 ? fa(Math.round(b / 1024)) + ' KB' : fa((b / 1048576).toFixed(b < 10485760 ? 1 : 0)) + ' MB';
+const fmtTime = ts => ts ? fa(new Date(ts*1000).toLocaleTimeString('en-GB')) : '—';
+
+/* ---- theme: auto / light / dark ---- */
+const SVG = d => `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const THEMES = ['auto', 'light', 'dark'], TNAME = {auto:'خودکار (مثل سیستم)', light:'روشن', dark:'تاریک'};
+const TICON = {
+  auto: SVG('<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>'),
+  light: SVG('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+  dark: SVG('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>'),
+};
+function getTheme(){ return document.documentElement.dataset.theme || 'auto'; }
+function setTheme(t){
+  if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  try { t === 'auto' ? localStorage.removeItem('theme') : localStorage.setItem('theme', t); } catch (e) {}
+  $('#themeBtn').innerHTML = TICON[t]; $('#themeBtn').title = 'تم: ' + TNAME[t] + ' — برای تغییر کلیک کنید';
+}
+$('#themeBtn').onclick = () => setTheme(THEMES[(THEMES.indexOf(getTheme()) + 1) % 3]);
+setTheme(getTheme());
+
+/* ---- render ---- */
+function render(st){
+  S = st; skew = st.now - Date.now()/1000;
+  $('#runDot').className = 'dot ' + (st.running ? 'ok' + (st.checking ? ' pulse' : '') : '');
+  $('#runBtn').textContent = st.running ? 'توقف' : 'شروع';
+  $('#dataUse').textContent = fmtMB(st.bytes_total);
+  const mins = Math.max(1, Math.round((st.now - st.started_at) / 60));
+  $('#dataUse').title = `حجم مصرف‌شده در ${fa(mins)} دقیقه گذشته\n` +
+    st.searches.filter(s => s.bytes).map(s => `${s.name}: ${fmtMB(s.bytes)}`).join('\n');
+  if (!$('#train_only').dataset.dirty) $('#train_only').checked = st.train_only;
+  $('#runBtn').className = st.running ? '' : 'solid';
+  const ms = st.messengers.filter(m => m.token);
+  $('#msgState').innerHTML = !ms.length ? '<span class="dot warn"></span>پیام‌رسانی تنظیم نشده' : ms.map(m => {
+    let cls = 'warn', txt = m.title + ': در حال اتصال', title = '';
+    if (!m.admin){ txt = m.title + ': /start بدهید'; }
+    else if (m.ok === true){ cls = 'ok'; txt = m.title; }
+    else if (m.ok === false){ cls = 'bad'; txt = m.title + ': قطع'; title = m.err; }
+    return `<span title="${esc(title)}"><span class="dot ${cls}"></span>${txt}</span>`;
+  }).join(' ');
+  for (const [id, v] of [['#imin', st.interval[0]], ['#imax', st.interval[1]], ['#dseats', st.default_min_seats]])
+    if (document.activeElement !== $(id)) $(id).value = v;
+  const g = st.settings;
+  for (const k of ['bale_chat_id','admin_chat_id','proxy'])
+    if (document.activeElement !== $('#'+k) && !$('#'+k).dataset.dirty) $('#'+k).value = g[k] || '';
+  for (const k of ['bale_token','telegram_token']) $('#'+k).placeholder = g[k] ? `تنظیم شده (${g[k]})` : 'توکن';
+  for (const k of ['headless','block_images']) if (!$('#'+k).dataset.dirty) $('#'+k).checked = g[k];
+  $('#dataDir').textContent = g.data_dir;
+
+  const box = $('#searches'), ids = new Set();
+  for (const s of st.searches){ ids.add(s.id); updateCard(s); }
+  for (const [id, el] of cards) if (!ids.has(id)){ el.remove(); cards.delete(id); }
+  const empty = $('#emptyMsg');
+  if (!st.searches.length && !empty) box.insertAdjacentHTML('beforeend', '<div id="emptyMsg" class="empty">هنوز جستجویی ندارید. لینک صفحه نتایج را بالا بچسبانید یا برای ربات بفرستید.</div>');
+  if (st.searches.length && empty) empty.remove();
+  tick();
+}
+
+function makeCard(s){
+  const el = document.createElement('div');
+  el.className = 'item';
+  el.innerHTML = `
+    <div class="top">
+      <label class="sw" title="روشن/خاموش"><input type="checkbox" class="en"><span></span></label>
+      <input class="name" title="برای تغییر اسم کلیک کنید">
+      <a class="site" target="_blank" rel="noopener"></a>
+    </div>
+    <div class="meta">
+      <span class="st"></span>
+      <span class="ctrl">
+        <span class="seat" title="حداقل صندلی برای خبر دادن"><button class="dec">−</button><b class="seats"></b><button class="inc">+</button></span>
+        <input class="flt" placeholder="فیلتر" title="فقط قطارهایی که این کلمه را دارند (مثلاً 17:30 یا 328)">
+        <a class="dbg" target="_blank" title="دانلود متن صفحه برای عیب‌یابی"><button class="icon">📄</button></a>
+        <button class="icon del" title="حذف">✕</button>
+      </span>
+      <span class="notice"></span>
+      <span class="err"></span>
+    </div>
+    <details class="res"><summary></summary><div class="rows"></div></details>`;
+  const id = s.id;
+  el.querySelector('.en').onchange = e => api('PATCH', `/api/searches/${id}`, {enabled: e.target.checked});
+  el.querySelector('.name').onchange = e => api('PATCH', `/api/searches/${id}`, {name: e.target.value});
+  el.querySelector('.flt').onchange = e => api('PATCH', `/api/searches/${id}`, {filter: e.target.value});
+  el.querySelector('.dec').onclick = () => api('PATCH', `/api/searches/${id}`, {min_seats: Math.max(1, cardData(id).min_seats - 1)});
+  el.querySelector('.inc').onclick = () => api('PATCH', `/api/searches/${id}`, {min_seats: cardData(id).min_seats + 1});
+  el.querySelector('.del').onclick = () => confirm(`«${cardData(id).name}» حذف شود؟`) && api('DELETE', `/api/searches/${id}`);
+  $('#searches').appendChild(el);
+  cards.set(id, el);
+  return el;
+}
+const cardData = id => S.searches.find(x => x.id === id);
+
+function updateCard(s){
+  const el = cards.get(s.id) || makeCard(s);
+  el.classList.toggle('off', !s.enabled);
+  el.classList.toggle('hit', s.eligible > 0 && s.enabled);
+  el.querySelector('.en').checked = s.enabled;
+  for (const [sel, v] of [['.name', s.name], ['.flt', s.filter]]){
+    const i = el.querySelector(sel); if (document.activeElement !== i) i.value = v;
+  }
+  el.querySelector('.seats').textContent = fa(s.min_seats);
+  const a = el.querySelector('.site'); a.href = s.url; a.textContent = host(s.url); a.title = s.url;
+  el.querySelector('.dbg').href = `/api/searches/${s.id}/debug`;
+  const dot = s.status === 'error' ? 'bad' : s.status === 'checking' ? 'warn pulse' : s.status === 'ok' ? 'ok' : '';
+  el.querySelector('.st').innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px">
+      <span class="dot ${dot}"></span>${STATUS[s.status] ? STATUS[s.status] + ' · ' : ''}${fmtTime(s.last_check)}</span>
+    &nbsp;·&nbsp; <b>${fa(s.found)}</b> قطار${s.skipped ? ` <span title="اتوبوس یا سفر ترکیبی که حساب نشد">(+${fa(s.skipped)} رد)</span>` : ''} &nbsp;·&nbsp; <b>${fa(s.available)}</b> آزاد
+    &nbsp;·&nbsp; <span class="${s.eligible ? 'good' : ''}"><b>${fa(s.eligible)}</b> با ≥${fa(s.min_seats)} صندلی</span>`;
+  el.querySelector('.err').textContent = s.error ? s.error : '';
+  el.querySelector('.notice').textContent = s.notice ? '⚠ ' + s.notice : '';
+  el.querySelector('.res summary').textContent = s.results.length ? `نمایش ${fa(s.results.length)} نتیجه` : 'نتیجه‌ای خوانده نشد';
+  el.querySelector('.rows').innerHTML = s.results.map(r => `
+    <div class="r ${r.eligible ? 'ok' : r.available ? '' : 'full'}">
+      <span class="t">${esc(r.text)}</span>
+      <span class="s">${r.available ? (r.seats == null ? 'آزاد' : fa(r.seats) + ' صندلی') : 'پر'}</span>
+      <span>${r.price ? fa(r.price.toLocaleString('en-US')) : '—'}</span></div>`).join('');
+}
+
+function tick(){
+  if (!S) return;
+  let t;
+  if (S.checking) t = 'در حال بررسی…';
+  else if (S.running && S.next_check){
+    const left = Math.max(0, Math.round(S.next_check - (Date.now()/1000 + skew)));
+    t = `بررسی بعدی ${fa(String(Math.floor(left/60)).padStart(2,'0'))}:${fa(String(left%60).padStart(2,'0'))}`;
+  } else t = S.running ? '—' : 'خاموش';
+  $('#countdown').textContent = t + (S.cycle ? ` · دور ${fa(S.cycle)}` : '');
+}
+setInterval(tick, 1000);
+
+const logEl = $('#log');
+function addLog(line){
+  const near = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40;
+  const d = document.createElement('div');
+  d.textContent = line;
+  if (line.includes('🎉')) d.className = 'hit'; else if (line.includes('⚠️')) d.className = 'bad';
+  logEl.appendChild(d);
+  while (logEl.children.length > 300) logEl.firstChild.remove();
+  if (near) logEl.scrollTop = logEl.scrollHeight;
+}
+
+function beep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, .25, .5].forEach(t => { const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(.25, ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + t + .2);
+      o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + .22); });
+  }catch(e){}
+}
+function onAlert(a){
+  if (soundOn) beep();
+  if (window.Notification && Notification.permission === 'granted')
+    new Notification('بلیط آزاد شد: ' + a.search, {body: a.seats + ' — ' + a.price});
+  const t = $('#toast');
+  t.innerHTML = `🎉 <b>${esc(a.search)}</b><br>${esc(a.seats)} · ${esc(a.price)} · <a href="${esc(a.url)}" target="_blank">باز کردن</a>`;
+  t.style.display = 'block';
+  clearTimeout(onAlert.tm); onAlert.tm = setTimeout(() => t.style.display = 'none', 20000);
+}
+
+function connect(){
+  const es = new EventSource('/events');
+  es.onopen = () => { $('#conn').innerHTML = ''; };
+  es.onerror = () => { $('#conn').innerHTML = '<span class="dot bad"></span>پنل از ربات جدا شد — تلاش دوباره…'; };
+  es.onmessage = e => {
+    const m = JSON.parse(e.data);
+    if (m.type === 'state') render(m);
+    else if (m.type === 'log') addLog(m.line);
+    else if (m.type === 'logs'){ logEl.innerHTML = ''; m.lines.forEach(addLog); logEl.scrollTop = logEl.scrollHeight; }
+    else if (m.type === 'alert') onAlert(m);
+  };
+}
+connect();
+
+$('#runBtn').onclick = () => api('POST', '/api/run', {on: !S.running});
+$('#checkBtn').onclick = () => api('POST', '/api/check');
+$('#moreBtn').onclick = () => $('#addForm').classList.toggle('open');
+$('#addForm').onsubmit = e => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  api('POST', '/api/searches', {name: f.get('name'), url: f.get('url'), min_seats: +f.get('min_seats') || 2, filter: f.get('filter')})
+    .then(j => { if (j.ok){ e.target.url.value = ''; e.target.name.value = ''; e.target.filter.value = ''; } });
+};
+$('#saveSettings').onclick = () => api('POST', '/api/settings', {interval_min_sec: +$('#imin').value,
+  interval_max_sec: +$('#imax').value, default_min_seats: +$('#dseats').value});
+$('#train_only').onchange = e => api('POST', '/api/settings', {train_only: e.target.checked});
+$('#tgTest').onclick = () => api('POST', '/api/telegram/test').then(j => j.ok && alert('پیام ارسال شد ✅'));
+document.querySelectorAll('.grid2 input').forEach(i => i.addEventListener(i.type === 'checkbox' ? 'change' : 'input', () => i.dataset.dirty = 1));
+$('#saveMsg').onclick = () => {
+  const b = {};
+  for (const k of ['bale_token','bale_chat_id','telegram_token','admin_chat_id','proxy']) b[k] = $('#'+k).value.trim() || (k.endsWith('token') ? '' : '-');
+  b.headless = $('#headless').checked; b.block_images = $('#block_images').checked;
+  api('POST', '/api/settings', b).then(j => { if (j.ok){
+    document.querySelectorAll('.grid2 input').forEach(i => { delete i.dataset.dirty; if (i.id.endsWith('token')) i.value = ''; });
+    alert('ذخیره شد ✅'); } });
+};
+$('#clearBale').onclick = () => confirm('توکن بله حذف شود؟') && api('POST', '/api/settings', {bale_token: '-'});
+$('#clearTg').onclick = () => confirm('توکن تلگرام حذف شود؟') && api('POST', '/api/settings', {telegram_token: '-'});
+$('#notifBtn').onclick = () => {
+  soundOn = true; beep();
+  if (window.Notification) Notification.requestPermission();
+  $('#notifBtn').textContent = 'صدا و اعلان فعال است';
+};
+</script>
+</body>
+</html>

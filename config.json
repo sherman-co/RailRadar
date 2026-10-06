@@ -1,0 +1,17 @@
+{
+  "telegram_token": "",
+  "admin_chat_id": "",
+  "proxy": "",
+  "bale_token": "",
+  "bale_chat_id": "",
+  "panel_host": "127.0.0.1",
+  "panel_port": 8080,
+  "open_panel_on_start": true,
+  "interval_min_sec": 150,
+  "interval_max_sec": 210,
+  "default_min_seats": 2,
+  "headless": true,
+  "block_images": true,
+  "autostart": false,
+  "train_only": true
+}

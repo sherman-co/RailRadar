@@ -1,0 +1,59 @@
+name: Build Windows exe
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Build TicketBot.exe
+        run: >
+          pyinstaller --noconfirm --onedir --console --name TicketBot
+          --add-data "panel.html;."
+          --add-data "config.json;."
+          --collect-all playwright
+          bot.py
+
+      - name: Smoke test (exe starts and serves the panel)
+        shell: pwsh
+        run: |
+          $env:TICKETBOT_DATA = "$env:RUNNER_TEMP\tb"
+          New-Item -ItemType Directory -Force $env:TICKETBOT_DATA | Out-Null
+          '{"open_panel_on_start": false}' | Set-Content "$env:TICKETBOT_DATA\config.json"
+          $p = Start-Process dist\TicketBot\TicketBot.exe -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep 3
+            try { Invoke-WebRequest http://127.0.0.1:8080/api/state -UseBasicParsing | Out-Null; $ok = $true; break } catch {}
+          }
+          Stop-Process -Id $p.Id -Force
+          if (-not $ok) { throw "panel did not start" }
+
+      - name: Zip
+        run: Compress-Archive -Path dist\TicketBot\* -DestinationPath TicketBot-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TicketBot-windows
+          path: TicketBot-windows.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: TicketBot-windows.zip
