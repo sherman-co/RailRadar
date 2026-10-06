@@ -2,7 +2,8 @@ name: Build Windows exe
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths-ignore: ["README.md", ".gitignore"]
   workflow_dispatch:
 
 permissions:
@@ -52,8 +53,21 @@ jobs:
           name: TicketBot-windows
           path: TicketBot-windows.zip
 
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Select-String -Path bot.py -Pattern '^VERSION = "(.+)"').Matches[0].Groups[1].Value
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: نسخه ${{ steps.ver.outputs.version }}
+          make_latest: true
+          body: |
+            ## دانلود
+            فایل **TicketBot-windows.zip** را دانلود کنید، Extract کنید و روی `TicketBot.exe` دوبار کلیک کنید.
+            راهنمای کامل در [صفحه اصلی](https://github.com/${{ github.repository }}#readme).
           files: TicketBot-windows.zip
