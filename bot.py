@@ -31,7 +31,7 @@ if sys.platform == "win32":
 
 # در نسخه exe فایل‌های همراه (panel.html و ...) داخل پوشه موقت PyInstaller هستند
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-VERSION = "7"
+VERSION = "8"
 
 
 def _data_dir():
@@ -79,11 +79,16 @@ FA_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "012345678
 # پیدا کردن کارت‌های نتیجه به‌صورت عمومی: کوچک‌ترین بخش‌هایی از صفحه که هم قیمت دارند هم ساعت
 PARSE_JS = r"""
 () => {
+  // ارقام فارسی/عربی → انگلیسی، و «ي/ك» عربی → «ی/ک» فارسی (رجا «ريال» را با ي عربی می‌نویسد)
   const fa = s => (s || '').replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d))
-                          .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+                          .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+                          .replace(/ي/g, 'ی').replace(/ك/g, 'ک');
   // قیمت واقعی = عدد چندرقمی کنار تومان/ریال، یا عدد بزرگ سه‌رقم‌سه‌رقم (مثل 1,510,000) اگر واحد جدا نوشته شده
   const priceRe = /(\d[\d,٬٫.]{3,}\s*\|?\s*(تومان|ریال))|(\b\d{1,3}([,٬]\d{3}){2,}\b)/;
-  const quickRe = /(تومان|ریال|\d{1,3}[,٬]\d{3}[,٬]\d{3}|[۰-۹]{1,3}[,٬][۰-۹]{3}[,٬][۰-۹]{3})/;
+  // کارت پر در بعضی سایت‌ها (مثل مستربلیط) اصلاً قیمت ندارد؛ با کلمه «تکمیل/غیرقابل رزرو» شناخته می‌شود
+  const fullRe = /(تکمیل|غ[یي]ر ?قابل رزرو|تمام شد|فروش رفته|ناموجود|ظرف[یي]ت ندارد)/;
+  const soldSel = '[class*="not-reservable" i],[class*="notreservable" i],[class*="sold-out" i],[class*="soldout" i]';
+  const quickRe = /(تومان|ریال|ريال|\d{1,3}[,٬]\d{3}[,٬]\d{3}|[۰-۹]{1,3}[,٬][۰-۹]{3}[,٬][۰-۹]{3})/;
   const timeRe = /\b\d{1,2}:\d{2}\b/;
   const timesRe = /\b\d{1,2}:\d{2}\b/g;
   const filterRe = /(حداکثر|حداقل|فیلتر|مرتب\s*سازی|شرکت‌های ریلی|شرکت های ریلی|ساعت حرکت\s*\|?\s*00:00)/;
@@ -108,21 +113,28 @@ PARSE_JS = r"""
   };
   const ok = el => {
     const raw = el.textContent || '';
-    if (raw.length > 4000 || !quickRe.test(raw)) return false;
+    if (raw.length > 4000 || !(quickRe.test(raw) || fullRe.test(raw))) return false;
     const tc = textOf(el);
-    return priceRe.test(tc) && timeRe.test(tc);
+    return timeRe.test(tc) && (priceRe.test(tc) || fullRe.test(tc));
   };
+  // کارت‌هایی که با کلاس «not-reservable» پر بودنشان معلوم است (مستربلیط کارت پر را بدون قیمت و متن نشان می‌دهد)
+  const soldCards = [...document.querySelectorAll(soldSel)].filter(e => {
+    if (e.closest('aside, header, footer, nav')) return false;
+    const t = textOf(e);
+    return t.length < 1500 && timeRe.test(t);
+  }).filter((e, i, a) => !a.some(o => o !== e && o.contains(e)));
+  const inSold = el => soldCards.some(s => s === el || s.contains(el) || el.contains(s));
   const els = [];
   for (const el of document.body.querySelectorAll('*')) {
     if (SKIP.has(el.tagName) || el.closest('aside, header, footer, nav')) continue;
-    if (ok(el)) els.push(el);
+    if (ok(el) && !inSold(el)) els.push(el);
   }
-  const set = new Set(els);
-  let cards = els.filter(el => !els.some(o => o !== el && el.contains(o)));
+  let cards = els.filter(el => !els.some(o => o !== el && el.contains(o))).concat(soldCards);
   const cardSet = new Set(cards);
   // کارت را تا جایی بزرگ کن که فقط همین یک سفر را داشته باشد (تا وضعیت «تکمیل ظرفیت» یا تعداد صندلی هم داخلش بیفتد)
   cards = cards.map(c => {
     let e = c;
+    if (soldCards.includes(c)) return c;
     while (e.parentElement && e.parentElement !== document.body) {
       const p = e.parentElement;
       let n = 0;
@@ -131,7 +143,9 @@ PARSE_JS = r"""
       const raw = p.textContent || '';
       if (raw.length > 3000) break;
       const t = textOf(p);
-      if (n > 1 || t.length > 1500 || filterRe.test(t) || (t.match(timesRe) || []).length > 6) break;
+      const pt = (t.match(timesRe) || []).length, et = (textOf(e).match(timesRe) || []).length;
+      // اگر کارت خودش ساعت حرکت و رسیدن را دارد و والد دو برابر ساعت دارد، یعنی والد یک کارت دیگر (تشخیص‌داده‌نشده) هم دارد
+      if (t.length > 1500 || filterRe.test(t) || pt > 6 || (et >= 2 && pt >= 2 * et)) break;
       e = p;
     }
     return e;
@@ -139,7 +153,12 @@ PARSE_JS = r"""
   const seen = new Set();
   return cards
     .filter(el => !seen.has(el) && seen.add(el))
-    .map(el => textOf(el))
+    .map(el => {
+      const t = textOf(el);
+      // کلاس «not-reservable» یعنی پر است حتی اگر متنی ننوشته باشد
+      const sold = el.matches(soldSel) || el.closest(soldSel) || el.querySelector(soldSel);
+      return sold && !fullRe.test(t) ? t + ' | تکمیل ظرفیت' : t;
+    })
     .filter(t => t.length > 10 && !filterRe.test(t) && (t.match(timesRe) || []).length <= 6)
     .slice(0, 80);
 }
@@ -160,7 +179,8 @@ READY_JS = r"""
 """
 
 FULL_WORDS = ["تکمیل", "ظرفیت پر", "پر شده", "پر شد", "ناموجود", "فروش رفته", "اتمام", "غیرقابل خرید",
-              "ظرفیت ندارد", "بدون ظرفیت", "تمام شد", "فروش تمام", "غیر فعال", "غیرفعال"]
+              "ظرفیت ندارد", "بدون ظرفیت", "تمام شد", "فروش تمام", "غیر فعال", "غیرفعال",
+              "غیرقابل رزرو", "غیر قابل رزرو", "موجود شد خبرم کن"]
 SEAT_RES = [
     re.compile(r"(?<![\d,٬:])(\d{1,3})\s*\|?\s*(?:صندلی|نفر|جا|عدد)\s*(?:باقی|خالی|موجود|مانده)"),
     re.compile(r"(?:ظرفیت|صندلی(?:\s|‌)*(?:های)?\s*خالی|جای\s*خالی|باقی\s*‌?مانده|موجودی)\s*(?:باقی\s*‌?مانده|خالی)?\s*[:：]?\s*\|?\s*(\d{1,3})(?![\d:,٬])"),
@@ -180,6 +200,8 @@ MAINT_PATTERNS = [
     r"امکان (خدمت ?رسانی|نمایش و خرید|فروش).{0,30}(فراهم نمی ?باشد|وجود ندارد)",
 ]
 MAINT_RE = re.compile("|".join(f"(?:{p})" for p in MAINT_PATTERNS))
+SITE_ERR_RE = re.compile(r"مشکلی در (انجام عملیات|دریافت اطلاعات)|خطایی رخ داده|"
+                         r"چند دقیقه (دیگر|بعد) (مجددا|مجدداً|دوباره) (تلاش|امتحان)")       # یوتراوز و ...
 NOT_FOUND_RE = re.compile(r"(قطار|قطاری|نتیجه ای|سفری|بلیطی) (یافت|پیدا) نشد")      # رجا
 UNTIL_RE = re.compile(r"(?:تا|حدود ساعت)\s*(?:حدود\s*)?(?:ساعت\s*)?(\d{1,2}:\d{2})(?![\s\S]*(?:تا|حدود ساعت)\s*(?:ساعت\s*)?\d{1,2}:\d{2})")
 
@@ -196,6 +218,8 @@ def detect_notice(body, n_cards):
         around = t[max(0, m.start() - 150): m.end() + 250]
         u = UNTIL_RE.search(around)
         return "سامانه راه‌آهن موقتاً در دسترس نیست" + (f" (حدود ساعت {u.group(1)} درست می‌شود)" if u else "")
+    if n_cards == 0 and SITE_ERR_RE.search(t):
+        return "سایت موقتاً خطا داد؛ دور بعد دوباره بررسی می‌شود"
     if n_cards == 0 and NOT_FOUND_RE.search(t):
         return "سایت قطاری پیدا نکرد (ممکن است سامانه راه‌آهن در دسترس نباشد)"
     return None
@@ -231,6 +255,7 @@ def now_str():
 
 
 def analyze(raw_text):
+    raw_text = raw_text.replace("ي", "ی").replace("ك", "ک")
     parts = [p for p in raw_text.split(" | ") if p not in JUNK_PARTS]
     text = " | ".join(parts)
     seats = None
@@ -606,7 +631,7 @@ class Monitor:
             seen, cards = set(), []
             for t in texts:
                 c = analyze(t)
-                if c["price"] is None:   # بدون قیمت = کارت سفر نیست
+                if c["price"] is None and c["available"]:   # بدون قیمت و نه «تکمیل» = کارت سفر نیست
                     continue
                 if c["key"] not in seen:
                     seen.add(c["key"])
