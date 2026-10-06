@@ -1,0 +1,95 @@
+# One-time job: republish the first two builds as RailRadar v1 and v2 and remove the old 7/8/9 releases.
+name: Rebuild v1 and v2
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/rebuild-history.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-old:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - ver: "1"
+            sha: 367562a95d7448adcf73bca80619ee8c2797a1c0
+          - ver: "2"
+            sha: aeab82243d5ceef21841a0a50d69b376a774c550
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use the source of that version
+        shell: bash
+        run: |
+          SHA="${{ matrix.sha }}"
+          echo "FULL_SHA=$SHA" >> $GITHUB_ENV
+          git checkout "$SHA" -- bot.py panel.html config.json requirements.txt
+
+      - name: Apply RailRadar name and version number
+        shell: python
+        run: |
+          import re
+          v = "${{ matrix.ver }}"
+          b = open("bot.py", encoding="utf-8").read()
+          b = re.sub(r'^VERSION = ".*"$', f'VERSION = "{v}"', b, flags=re.M)
+          open("bot.py", "w", encoding="utf-8").write(b)
+          p = open("panel.html", encoding="utf-8").read()
+          p = p.replace("<title>پایش بلیط</title>", "<title>RailRadar</title>")
+          p = p.replace('</span> پایش بلیط <span class="ver">', '</span> RailRadar <span class="ver">')
+          p = re.sub(r"نسخه [۰-۹0-9]+", f"v{v}", p)
+          open("panel.html", "w", encoding="utf-8").write(p)
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build
+        run: |
+          pip install -r requirements.txt pyinstaller
+          pyinstaller --noconfirm --onedir --console --name RailRadar --add-data "panel.html;." --add-data "config.json;." --collect-all playwright bot.py
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $env:TICKETBOT_DATA = "$env:RUNNER_TEMP\tb"
+          New-Item -ItemType Directory -Force $env:TICKETBOT_DATA | Out-Null
+          '{"open_panel_on_start": false}' | Set-Content "$env:TICKETBOT_DATA\config.json"
+          $p = Start-Process dist\RailRadar\RailRadar.exe -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 40; $i++) {
+            Start-Sleep 3
+            try { Invoke-WebRequest http://127.0.0.1:8080/api/state -UseBasicParsing | Out-Null; $ok = $true; break } catch {}
+          }
+          Stop-Process -Id $p.Id -Force
+          if (-not $ok) { throw "panel did not start" }
+
+      - name: Zip
+        run: Compress-Archive -Path dist\RailRadar\* -DestinationPath RailRadar-windows.zip
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ matrix.ver }}
+          target_commitish: ${{ env.FULL_SHA }}
+          name: RailRadar v${{ matrix.ver }}
+          body_path: docs/releases/v${{ matrix.ver }}.md
+          make_latest: false
+          files: RailRadar-windows.zip
+
+  cleanup:
+    needs: build-old
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove old 7/8/9 releases and tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for t in v7 v8 v9; do gh release delete "$t" --cleanup-tag --yes -R "${{ github.repository }}" || true; done
+          gh release edit v3 --latest -R "${{ github.repository }}" || true

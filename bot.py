@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-ربات پایش بلیط قطار — پنل وب زنده + مدیریت از تلگرام
+RailRadar — ربات پایش بلیط قطار: پنل وب زنده + مدیریت از بله و تلگرام
 اجرا:  python bot.py      پنل:  http://127.0.0.1:8080
 """
 import asyncio
@@ -31,7 +31,7 @@ if sys.platform == "win32":
 
 # در نسخه exe فایل‌های همراه (panel.html و ...) داخل پوشه موقت PyInstaller هستند
 BASE = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-VERSION = "9"
+VERSION = "3"
 
 
 def _data_dir():
@@ -395,6 +395,7 @@ class Monitor:
             "checking": self.checking,
             "next_check": self.next_check,
             "cycle": self.cycle,
+            "version": VERSION,
             "bytes_total": self.bytes_total,
             "started_at": self.started_at,
             "train_only": self.cfg.get("train_only", True),

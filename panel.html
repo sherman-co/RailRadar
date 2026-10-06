@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>پایش بلیط</title>
+<title>RailRadar</title>
 <script>
   // تم قبل از رندر اعمال شود تا صفحه چشمک نزند
   try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
@@ -144,7 +144,7 @@ code{direction:ltr;unicode-bidi:embed;font-size:11.5px}
 <body>
 <div class="wrap">
   <header>
-    <h1><span id="runDot" class="dot"></span> پایش بلیط <span class="ver">نسخه ۹</span></h1>
+    <h1><span id="runDot" class="dot"></span> RailRadar <span class="ver" id="ver"></span></h1>
     <div class="actions">
       <span class="data" id="dataUse" title="حجم اینترنت مصرف‌شده از زمان روشن شدن برنامه"></span>
       <button class="icon" id="themeBtn" title="تم"></button>
@@ -259,6 +259,7 @@ setTheme(getTheme());
 /* ---- render ---- */
 function render(st){
   S = st; skew = st.now - Date.now()/1000;
+  $('#ver').textContent = st.version ? 'v' + st.version : '';
   $('#runDot').className = 'dot ' + (st.running ? 'ok' + (st.checking ? ' pulse' : '') : '');
   $('#runBtn').textContent = st.running ? 'توقف' : 'شروع';
   $('#dataUse').textContent = fmtMB(st.bytes_total);

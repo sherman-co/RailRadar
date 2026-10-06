@@ -3,7 +3,7 @@ name: Build Windows exe
 on:
   push:
     branches: [main]
-    paths-ignore: ["README.md", ".gitignore"]
+    paths-ignore: ["README.md", ".gitignore", "docs/panel.png", ".github/workflows/rebuild-history.yml"]
   workflow_dispatch:
 
 permissions:
@@ -22,9 +22,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
 
-      - name: Build TicketBot.exe
+      - name: Build RailRadar.exe
         run: >
-          pyinstaller --noconfirm --onedir --console --name TicketBot
+          pyinstaller --noconfirm --onedir --console --name RailRadar
           --add-data "panel.html;."
           --add-data "config.json;."
           --collect-all playwright
@@ -36,7 +36,7 @@ jobs:
           $env:TICKETBOT_DATA = "$env:RUNNER_TEMP\tb"
           New-Item -ItemType Directory -Force $env:TICKETBOT_DATA | Out-Null
           '{"open_panel_on_start": false}' | Set-Content "$env:TICKETBOT_DATA\config.json"
-          $p = Start-Process dist\TicketBot\TicketBot.exe -PassThru
+          $p = Start-Process dist\RailRadar\RailRadar.exe -PassThru
           $ok = $false
           for ($i = 0; $i -lt 40; $i++) {
             Start-Sleep 3
@@ -46,28 +46,28 @@ jobs:
           if (-not $ok) { throw "panel did not start" }
 
       - name: Zip
-        run: Compress-Archive -Path dist\TicketBot\* -DestinationPath TicketBot-windows.zip
+        run: Compress-Archive -Path dist\RailRadar\* -DestinationPath RailRadar-windows.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: TicketBot-windows
-          path: TicketBot-windows.zip
+          name: RailRadar-windows
+          path: RailRadar-windows.zip
 
-      - name: Read version
+      - name: Read version and release notes
         id: ver
         shell: pwsh
         run: |
           $v = (Select-String -Path bot.py -Pattern '^VERSION = "(.+)"').Matches[0].Groups[1].Value
           "version=$v" >> $env:GITHUB_OUTPUT
+          $notes = "docs/releases/v$v.md"
+          if (-not (Test-Path $notes)) { "## RailRadar v$v`n`nDownload **RailRadar-windows.zip**, extract it and run ``RailRadar.exe``." | Set-Content notes.md; $notes = "notes.md" }
+          "notes=$notes" >> $env:GITHUB_OUTPUT
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
-          name: نسخه ${{ steps.ver.outputs.version }}
+          name: RailRadar v${{ steps.ver.outputs.version }}
+          body_path: ${{ steps.ver.outputs.notes }}
           make_latest: true
-          body: |
-            ## دانلود
-            فایل **TicketBot-windows.zip** را دانلود کنید، Extract کنید و روی `TicketBot.exe` دوبار کلیک کنید.
-            راهنمای کامل در [صفحه اصلی](https://github.com/${{ github.repository }}#readme).
-          files: TicketBot-windows.zip
+          files: RailRadar-windows.zip
